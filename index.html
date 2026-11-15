@@ -333,6 +333,7 @@
     // --- MQTT & TELEMETRY LOGIC ---
     let cache = { temp_c: "--", spo2_pct: "--", bp_sys: "--", bp_dia: "--", hr_bpm: "--", total_g: "--", lat: "17.281205", lon: "78.539154", alert: false, event: "NONE" };
     let isSirenPlaying = false;
+    let isMuted = false; // <--- NEW VARIABLE
 
     const mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
     mqttClient.on('connect', () => { mqttClient.subscribe('embeddify/healthmonitor/telemetry'); });
@@ -362,7 +363,7 @@
       }
     }
 
-    function updateDashboardUI() {
+function updateDashboardUI() {
       document.getElementById('dispName').innerText = pName;
       document.getElementById('dispPhone').innerText = pPhone;
       document.getElementById('mapSection').style.display = showMap ? 'block' : 'none';
@@ -382,12 +383,17 @@
       const siren = document.getElementById('sirenAudio');
 
       if (cache.alert && cache.event !== "NONE") {
-        alertBanner.style.display = 'block';
+        // Only show banner if it hasn't been muted by the user yet
+        if (!isMuted) {
+          alertBanner.style.display = 'block';
+        }
+        
         document.getElementById('alertEventName').innerText = cache.event;
         pred.innerText = "CRITICAL: Physical Emergency Detected!";
         pred.style.color = "var(--danger)";
         
-        if (!isSirenPlaying) {
+        // Only play siren if not playing AND not muted
+        if (!isSirenPlaying && !isMuted) {
           isSirenPlaying = true;
           siren.play().catch(e => console.log("Audio requires page interaction first."));
           logAlertToHistory(cache.event);
@@ -396,8 +402,10 @@
           }
         }
       } else {
+        // When the alert clears completely, hide banner and reset the mute flag for next time
         if(!cache.alert) {
              alertBanner.style.display = 'none';
+             isMuted = false; // Reset mute for future emergencies
              if(isSirenPlaying) { siren.pause(); siren.currentTime = 0; isSirenPlaying = false; }
         }
         
@@ -411,8 +419,11 @@
 
     function acknowledgeAlert() {
       document.getElementById('priorityAlertBanner').style.display = 'none';
+      isMuted = true; // Tell the system to ignore further alerts for this event
       const siren = document.getElementById('sirenAudio');
-      siren.pause(); siren.currentTime = 0; isSirenPlaying = false;
+      siren.pause(); 
+      siren.currentTime = 0; 
+      isSirenPlaying = false;
     }
 
     function logAlertToHistory(eventName) {
