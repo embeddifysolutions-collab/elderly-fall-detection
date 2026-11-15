@@ -114,7 +114,7 @@
 
   <script>
     // --- 1. MQTT WEBSOCKET CONNECTION ---
-    const mqttClient = mqtt.connect('wss://broker.hivemq.com:8000/mqtt');
+    const mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
     const topic = 'embeddify/healthmonitor/telemetry';
 
     mqttClient.on('connect', () => {
