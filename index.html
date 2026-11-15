@@ -73,9 +73,17 @@
 </head>
 <body>
 
+<body>
+
+  <!-- ================= START MONITORING OVERLAY ================= -->
+  <div id="startOverlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(31, 41, 55, 0.95); color: white; z-index: 10000; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px;">
+    <h1 style="color: #60a5fa; font-size: 2.5rem; margin-bottom: 10px;">IoT Health Monitor</h1>
+    <p style="font-size: 1.2rem; color: #d1d5db; margin-bottom: 30px; max-width: 500px;">To comply with browser security policies, please enable audio alarms and notifications to begin live monitoring.</p>
+    <button onclick="startMonitoring()" style="background: #2563eb; font-size: 1.2rem; padding: 15px 40px; width: auto; border-radius: 50px; box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);">Enable Alerts & Start</button>
+  </div>
+
   <!-- Audio for Emergency (Preloaded) -->
   <audio id="sirenAudio" src="https://assets.mixkit.co/active_storage/sfx/995/995-preview.mp3" preload="auto" loop></audio>
-
   <!-- ================= DASHBOARD VIEW (DEFAULT) ================= -->
   <div id="dashboardView" class="container">
     
@@ -202,14 +210,22 @@
 
   <script>
     // --- BROWSER AUDIO & NOTIFICATION FIX ---
-    // Browsers block audio unless the user interacts with the page at least once.
-    document.addEventListener('click', function unlockAudio() {
-       document.getElementById('sirenAudio').load();
-       document.removeEventListener('click', unlockAudio);
-    });
+// --- FORCED INTERACTION FIX FOR HOSTED AUDIO ---
+    function startMonitoring() {
+      // Hide the overlay
+      document.getElementById('startOverlay').style.display = 'none';
+      
+      // Force unlock the audio context by playing and immediately pausing
+      const siren = document.getElementById('sirenAudio');
+      siren.play().then(() => {
+        siren.pause();
+        siren.currentTime = 0;
+      }).catch(e => console.log("Audio unlock successful, but blocked by strict mode", e));
 
-    if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
-      Notification.requestPermission();
+      // Request Notification Permissions
+      if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
+        Notification.requestPermission();
+      }
     }
 
     // --- VIEW ROUTING & AUTH ---
