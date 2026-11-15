@@ -112,8 +112,14 @@
     </div>
   </div>
 
-  <script>
-    // --- 1. MQTT WEBSOCKET CONNECTION ---
+ <script>
+    // --- 1. CACHE VARIABLES (Prevents 'undefined' errors during partial JSONs) ---
+    let cache = {
+      temp_c: "--", spo2_pct: "--", bp_sys: "--", bp_dia: "--", hr_bpm: "--", total_g: "--",
+      lat: "17.281205", lon: "78.539154", alert: false, event: "NONE"
+    };
+
+    // --- 2. MQTT WEBSOCKET CONNECTION ---
     const mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
     const topic = 'embeddify/healthmonitor/telemetry';
 
@@ -131,7 +137,7 @@
       }
     });
 
-    // --- 2. CHART SETUP ---
+    // --- 3. CHART SETUP ---
     function createChart(ctx, label, color) {
       return new Chart(ctx, {
         type: 'line',
@@ -142,32 +148,53 @@
     const tempChart = createChart(document.getElementById('tempChart').getContext('2d'), 'Temperature (°C)', '#e67e22');
     const spo2Chart = createChart(document.getElementById('spo2Chart').getContext('2d'), 'SpO2 (%)', '#2ecc71');
 
+    // --- 4. DASHBOARD UPDATE LOGIC ---
     function updateDashboard(data) {
-      document.getElementById('valTemp').innerHTML = (data.temp_c !== null) ? data.temp_c + " &deg;C" : "N/A";
-      document.getElementById('valSpo2').innerText = data.spo2_pct + " %";
-      document.getElementById('valBp').innerText = data.bp_sys + "/" + data.bp_dia;
-      document.getElementById('valHr').innerText = data.hr_bpm + " BPM";
-      document.getElementById('valG').innerText = data.total_g + " g";
+      // Update cache only for fields that exist in the incoming JSON
+      if (data.temp_c !== undefined) cache.temp_c = data.temp_c;
+      if (data.spo2_pct !== undefined) cache.spo2_pct = data.spo2_pct;
+      if (data.bp_sys !== undefined) cache.bp_sys = data.bp_sys;
+      if (data.bp_dia !== undefined) cache.bp_dia = data.bp_dia;
+      if (data.hr_bpm !== undefined) cache.hr_bpm = data.hr_bpm;
+      if (data.total_g !== undefined) cache.total_g = data.total_g;
+      if (data.lat !== undefined) cache.lat = data.lat;
+      if (data.lon !== undefined) cache.lon = data.lon;
+
+      // Force alert to trigger instantly if the early SMS status packet arrives
+      if (data.sms_submitted !== undefined) {
+        cache.alert = true;
+        cache.event = data.event;
+      } else if (data.alert !== undefined) {
+        cache.alert = data.alert;
+        cache.event = data.event;
+      }
+
+      // Render UI using the cache (solves the "undefined" UI glitch)
+      document.getElementById('valTemp').innerHTML = (cache.temp_c !== null && cache.temp_c !== "--") ? cache.temp_c + " &deg;C" : "N/A";
+      document.getElementById('valSpo2').innerText = cache.spo2_pct + " %";
+      document.getElementById('valBp').innerText = cache.bp_sys + "/" + cache.bp_dia;
+      document.getElementById('valHr').innerText = cache.hr_bpm + " BPM";
+      document.getElementById('valG').innerText = cache.total_g + " g";
       
-      document.getElementById('latVal').innerText = data.lat;
-      document.getElementById('lonVal').innerText = data.lon;
-      const mapUrl = "https://maps.google.com/?q=" + data.lat + "," + data.lon;
+      document.getElementById('latVal').innerText = cache.lat;
+      document.getElementById('lonVal').innerText = cache.lon;
+      const mapUrl = "https://maps.google.com/?q=" + cache.lat + "," + cache.lon;
       document.getElementById('gpsLink').href = mapUrl;
 
-      // Alerts & Prediction
+      // Alerts & Prediction Handling
       const alertBanner = document.getElementById('priorityAlertBanner');
       const predictionEl = document.getElementById('healthPrediction');
 
-      if (data.alert) {
+      if (cache.alert) {
         alertBanner.style.display = 'block';
-        document.getElementById('alertEventName').innerText = data.event;
+        document.getElementById('alertEventName').innerText = cache.event;
         document.getElementById('alertMapLink').href = mapUrl;
         
         predictionEl.innerText = "CRITICAL: Physical Emergency Detected!";
         predictionEl.style.color = "#cc0000";
       } else {
         alertBanner.style.display = 'none';
-        if (data.spo2_pct < 92 || data.temp_c > 38.0 || data.hr_bpm > 110 || data.hr_bpm < 50) {
+        if (cache.spo2_pct !== "--" && (cache.spo2_pct < 92 || cache.temp_c > 38.0 || cache.hr_bpm > 110 || cache.hr_bpm < 50)) {
           predictionEl.innerText = "WARNING: Abnormal Vitals. Monitor Closely.";
           predictionEl.style.color = "#f39c12";
         } else {
@@ -176,21 +203,23 @@
         }
       }
 
-      // Charts
-      const timeLabel = new Date().toLocaleTimeString();
-      if (data.temp_c !== null) {
+      // Charts (Update graphs only on full telemetry, skip during partial SMS packets)
+      if (data.sms_submitted === undefined && cache.temp_c !== "--") {
+        const timeLabel = new Date().toLocaleTimeString();
+        
         tempChart.data.labels.push(timeLabel);
-        tempChart.data.datasets[0].data.push(data.temp_c);
+        tempChart.data.datasets[0].data.push(cache.temp_c);
         if(tempChart.data.labels.length > 30) { tempChart.data.labels.shift(); tempChart.data.datasets[0].data.shift(); }
         tempChart.update();
+        
+        spo2Chart.data.labels.push(timeLabel);
+        spo2Chart.data.datasets[0].data.push(cache.spo2_pct);
+        if(spo2Chart.data.labels.length > 30) { spo2Chart.data.labels.shift(); spo2Chart.data.datasets[0].data.shift(); }
+        spo2Chart.update();
       }
-      spo2Chart.data.labels.push(timeLabel);
-      spo2Chart.data.datasets[0].data.push(data.spo2_pct);
-      if(spo2Chart.data.labels.length > 30) { spo2Chart.data.labels.shift(); spo2Chart.data.datasets[0].data.shift(); }
-      spo2Chart.update();
     }
 
-    // --- 3. MEDICAL RECORDS LOGIC (Local Storage for static hosting) ---
+    // --- 5. MEDICAL RECORDS LOGIC (Local Storage) ---
     const prescInput = document.getElementById('prescriptionInput');
     const prescPreview = document.getElementById('prescriptionPreview');
     const notesInput = document.getElementById('doctorNotes');
@@ -198,7 +227,6 @@
     
     let medicines = JSON.parse(localStorage.getItem('medicines')) || [];
 
-    // Load saved data on startup
     window.onload = () => {
       notesInput.value = localStorage.getItem('doctorNotes') || "";
       const savedImg = localStorage.getItem('prescriptionImg');
@@ -209,7 +237,6 @@
       renderMedicines();
     };
 
-    // Handle Image Upload
     prescInput.addEventListener('change', function(e) {
       const file = e.target.files[0];
       if (file) {
@@ -260,5 +287,3 @@
       });
     }
   </script>
-</body>
-</html>
