@@ -407,10 +407,14 @@
         if (!isSirenPlaying) {
           isSirenPlaying = true;
           siren.play().catch(e => console.log("Audio requires page interaction first."));
-          logAlertToHistory(cache.event);
-          if (Notification.permission === "granted") {
-            new Notification("🚨 EMERGENCY ALERT", { body: "Patient Triggered: " + cache.event });
-          }
+          playSiren();
+logAlertToHistory(cache.event);
+
+if ("Notification" in window && Notification.permission === "granted") {
+  new Notification("🚨 EMERGENCY ALERT", {
+    body: "Patient Triggered: " + cache.event
+  });
+}
         }
       } else {
         if(!cache.alert) {
